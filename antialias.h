@@ -5,7 +5,7 @@ class QImage;
 
 namespace image {
 
-void antialias(QImage *image);
+bool antialias(QImage *image);
 
 } // namespace image
 

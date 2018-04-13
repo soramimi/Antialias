@@ -7,7 +7,8 @@ class MyWidget : public QWidget
 {
 	Q_OBJECT
 private:
-	QImage image;
+	QImage image1;
+	QImage image2;
 public:
 	explicit MyWidget(QWidget *parent = nullptr);
 
