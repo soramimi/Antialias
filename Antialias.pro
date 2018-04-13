@@ -26,11 +26,13 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
         main.cpp \
         MainWindow.cpp \
-    MyWidget.cpp
+    MyWidget.cpp \
+    antialias.cpp
 
 HEADERS += \
         MainWindow.h \
-    MyWidget.h
+    MyWidget.h \
+    antialias.h
 
 FORMS += \
         MainWindow.ui
