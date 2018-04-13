@@ -10,52 +10,56 @@ namespace image {
 static void antialias_(int length, uint8_t const *line0, uint8_t const *line1, uint8_t const *line2, std::function<void(int pos, uint8_t v)> writer)
 {
 	for (int pos = 0; pos < length; pos++) {
-		int v = (line1[pos + 1] + line1[pos + 2]) / 2;
-		if ((line0[pos + 1] < v && line0[pos + 2] < v) || (line0[pos + 1] > v && line0[pos + 2] > v)) {
-			int n1, n2;
-			n1 = n2 = 0;
-			if (line1[pos + 1] < v) {
-				for (int i = pos; i > 0; i--) {
-					if (line1[i + 1] >= v) break;
-					if (line2[i + 1] <= v) break;
-					n1++;
+		if (line1[pos + 1] != line1[pos + 2]) {
+			int a = (line1[pos + 1] + line1[pos + 2]) / 2;
+			int n1 = 0;
+			int n2 = 0;
+			if (line1[pos + 1] < a) {
+				if (line0[pos + 2] < a || line2[pos + 2] < a) {
+					for (int i = pos; i > 0; i--) {
+						if (line1[i + 1] > a) break;
+						if (line2[i + 1] < a) break;
+						n1++;
+					}
 				}
-				for (int i = pos + 1; i < length; i++) {
-					if (line1[i + 1] <= v) break;
-					if (line0[i + 1] >= v) break;
-					n2++;
+				if (line0[pos] > a || line2[pos] > a) {
+					for (int i = pos + 1; i < length; i++) {
+						if (line1[i + 1] < a) break;
+						if (line0[i + 1] > a) break;
+						n2++;
+					}
 				}
 			} else {
-				for (int i = pos; i > 0; i--) {
-					if (line1[i + 1] <= v) break;
-					if (line0[i + 1] >= v) break;
-					n1++;
+				if (line0[pos + 2] > a || line2[pos + 2] > a) {
+					for (int i = pos; i > 0; i--) {
+						if (line1[i + 1] < a) break;
+						if (line0[i + 1] > a) break;
+						n1++;
+					}
 				}
-				for (int i = pos + 1; i < length; i++) {
-					if (line1[i + 1] >= v) break;
-					if (line2[i + 1] <= v) break;
-					n2++;
+				if (line0[pos] < a || line2[pos] < a) {
+					for (int i = pos + 1; i < length; i++) {
+						if (line1[i + 1] > a) break;
+						if (line2[i + 1] < a) break;
+						n2++;
+					}
 				}
 			}
 			n1 /= 2;
 			if (n1 > 0) {
-				int a = v;
 				int b = line1[pos + 1 - n1];
 				for (int i = 0; i < n1; i++) {
-					int v = a + (b - a) * (i + 1) / (n1 + 1);
-					writer(pos - i, v);
+					writer(pos - i, a + (b - a) * (i + 1) / (n1 + 1));
 				}
 			}
 			n2 /= 2;
 			if (n2 > 0) {
-				int a = v;
 				int b = line1[pos + 1 + n2];
 				for (int i = 0; i < n2; i++) {
-					int v = a + (b - a) * (i + 1) / (n2 + 1);
-					writer(pos + i + 1, v);
+					writer(pos + i + 1, a + (b - a) * (i + 1) / (n2 + 1));
 				}
+				pos += n2;
 			}
-			pos += n2;
 		}
 	}
 }

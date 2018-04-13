@@ -8,31 +8,56 @@ MyWidget::MyWidget(QWidget *parent)
 
 }
 
+void MyWidget::updateImage()
+{
+	if (source_image.isNull()) {
+		int w = width() / 2;
+		int h = height();
+		if (image1.width() != w || image1.height() != h) {
+			if (w > 0 && h > 0) {
+				image1 = QImage(w, h, QImage::Format_RGB888);
+				image1.fill(Qt::black);
+				{
+					QPainter pr(&image1);
+					pr.setPen(Qt::white);
+					pr.setBrush(Qt::white);
+					pr.drawEllipse(5, 5, w - 10, h - 10);
+				}
+			}
+		}
+	} else {
+		image1 = source_image.convertToFormat(QImage::Format_RGB888);
+		image2 = QImage();
+	}
+}
+
+void MyWidget::loadImage(QString const &path)
+{
+	source_image = QImage(path);
+	image2 = QImage();
+	updateImage();
+}
+
 void MyWidget::paintEvent(QPaintEvent *event)
 {
-	int w = width() / 2;
+	updateImage();
+	if (image2.isNull()) {
+		image2 = image1;
+		image::antialias(&image2);
+	}
+
+	QPainter pr(this);
+	int w = width();
 	int h = height();
-	if (image1.width() != w || image1.height() != h) {
-		if (w > 0 && h > 0) {
-			image1 = QImage(w, h, QImage::Format_RGB888);
-			image1.fill(Qt::black);
-			{
-				QPainter pr(&image1);
-				pr.setPen(Qt::white);
-				pr.setBrush(Qt::white);
-				pr.drawEllipse(1, 1, w - 3, h - 3);
-			}
-			image2 = image1;
-			image::antialias(&image2);
-		} else {
-			image1 = QImage();
-			image2 = QImage();
-		}
-	}
-	if (!image1.isNull()) {
-		QPainter pr(this);
-		pr.fillRect(0, 0, width(), height(), Qt::black);
-		pr.drawImage(0, 0, image1);
-		pr.drawImage(width() - w, 0, image2);
-	}
+	pr.fillRect(0, 0, w, h, Qt::black);
+	pr.setClipRect(0, 0, w / 2, h);
+	pr.drawImage((w / 2 - image1.width()) / 2, (h - image1.height()) / 2, image1);
+	pr.translate(w - w / 2, 0);
+	pr.setClipRect(0, 0, w / 2, h);
+	pr.drawImage((w / 2 - image1.width()) / 2, (h - image1.height()) / 2, image2);
+}
+
+void MyWidget::resizeEvent(QResizeEvent *event)
+{
+	image2 = QImage();
 }
