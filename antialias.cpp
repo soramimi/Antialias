@@ -6,8 +6,15 @@
 #include <QDebug>
 
 namespace image {
+namespace {
 
-static void antialias_(int length, uint8_t const *line0, uint8_t const *line1, uint8_t const *line2, std::function<void(int pos, uint8_t v)> writer)
+class AntialiasRW {
+public:
+	virtual void reader(int line, uint8_t *out) = 0;
+	virtual void writer(int pos, uint8_t v) = 0;
+};
+
+void filter3(int length, uint8_t *line0, uint8_t *line1, uint8_t *line2, AntialiasRW *rw)
 {
 	for (int pos = 0; pos < length; pos++) {
 		if (line1[pos + 1] != line1[pos + 2]) {
@@ -49,142 +56,197 @@ static void antialias_(int length, uint8_t const *line0, uint8_t const *line1, u
 			if (n1 > 0) {
 				int b = line1[pos + 1 - n1];
 				for (int i = 0; i < n1; i++) {
-					writer(pos - i, a + (b - a) * (i + 1) / (n1 + 1));
+					rw->writer(pos - i, a + (b - a) * (i + 1) / (n1 + 1));
 				}
 			}
 			n2 /= 2;
 			if (n2 > 0) {
 				int b = line1[pos + 1 + n2];
 				for (int i = 0; i < n2; i++) {
-					writer(pos + i + 1, a + (b - a) * (i + 1) / (n2 + 1));
+					rw->writer(pos + i + 1, a + (b - a) * (i + 1) / (n2 + 1));
 				}
-				pos += n2;
 			}
+			pos += n2;
 		}
 	}
 }
 
-static void antialias_gray8(QImage *image)
-{
-	int w = image->width();
-	int h = image->height();
-
-	int span = w > h ? w : h;
-	uint8_t *tmp0 = (uint8_t *)alloca(span + 2);
-	uint8_t *tmp1 = (uint8_t *)alloca(span + 2);
-	uint8_t *tmp2 = (uint8_t *)alloca(span + 2);
-
+class BasicAntialias {
+protected:
+	int width;
+	int height;
 	int row;
+	uint8_t *tmp0;
+	uint8_t *tmp1;
+	uint8_t *tmp2;
+	uint8_t **scanlines;
 
-	auto ReaderH = [&](int line, uint8_t *out){
-		memcpy(out + 1, image->scanLine(line), w);
-		out[0] = tmp0[1];
-		out[w + 1] = tmp0[w];
-	};
-
-	auto WriterH = [&](int pos, uint8_t v){
-		image->scanLine(row)[pos] = v;
-	};
-
-	auto ReaderV = [&](int line, uint8_t *out){
-		for (int y = 0; y < h; y++) {
-			out[y + 1] = ((uint8_t const *)image->scanLine(y))[line];
-		}
-		out[0] = tmp0[1];
-		out[h + 1] = tmp0[h];
-	};
-
-	auto WriterV = [&](int pos, uint8_t v){
-		image->scanLine(pos)[row] = v;
-	};
-
-	auto Do = [&](int length, int rows, std::function<void(int, uint8_t *)> reader, std::function<void(int, uint8_t)> writer){
+	void filter2(int length, int rows, AntialiasRW *rw)
+	{
+		uint8_t *buf0 = tmp0;
+		uint8_t *buf1 = tmp1;
+		uint8_t *buf2 = tmp2;
+		rw->reader(0, buf0);
+		rw->reader(0, buf2);
 		for (row = 0; row < rows; row++) {
-			if (row == 0) {
-				reader(row, tmp0);
-			} else {
-				memcpy(tmp0, tmp1, length + 2);
+			if (row > 0) {
+				std::swap(buf0, buf1);
 			}
-			reader(row, tmp1);
 			if (row + 1 < rows) {
-				reader(row + 1, tmp2);
-			}
-			antialias_(length, tmp0, tmp1, tmp2, writer);
-			antialias_(length, tmp2, tmp1, tmp0, writer);
-		}
-	};
-
-	Do(w, h, ReaderH, WriterH);
-	Do(h, w, ReaderV, WriterV);
-}
-
-static void antialias_rgb888(QImage *image)
-{
-	int w = image->width();
-	int h = image->height();
-
-	int span = w > h ? w : h;
-	uint8_t *tmp0 = (uint8_t *)alloca(span + 2);
-	uint8_t *tmp1 = (uint8_t *)alloca(span + 2);
-	uint8_t *tmp2 = (uint8_t *)alloca(span + 2);
-
-	int row;
-	int byte_offset;
-
-	auto ReaderH = [&](int line, uint8_t *out){
-		uint8_t const *src = (uint8_t const *)image->scanLine(line);
-		for (int i = 0; i < w; i++) {
-			out[i + 1] = src[i * 3 + byte_offset];
-		}
-		out[0] = tmp0[1];
-		out[w + 1] = tmp0[w];
-	};
-
-	auto WriterH = [&](int pos, uint8_t v){
-		uint8_t *ptr = (uint8_t *)image->scanLine(row) + pos * 3;
-		ptr[byte_offset] = v;
-	};
-
-	auto ReaderV = [&](int line, uint8_t *out){
-		for (int y = 0; y < h; y++) {
-			uint8_t const *src = (uint8_t const *)image->scanLine(y) + line * 3;
-			out[y + 1] = src[byte_offset];
-		}
-		out[0] = tmp0[1];
-		out[h + 1] = tmp0[h];
-	};
-
-	auto WriterV = [&](int pos, uint8_t v){
-		uint8_t *ptr = (uint8_t *)image->scanLine(pos) + row * 3;
-		ptr[byte_offset] = v;
-	};
-
-	auto Do = [&](int length, int rows, std::function<void(int, uint8_t *)> reader, std::function<void(int, uint8_t)> writer){
-		for (row = 0; row < rows; row++) {
-			if (row == 0) {
-				reader(row, tmp0);
+				std::swap(buf1, buf2);
+				rw->reader(row + 1, buf2);
 			} else {
-				memcpy(tmp0, tmp1, length + 2);
+				buf1 = buf2;
 			}
-			reader(row, tmp1);
-			if (row + 1 < rows) {
-				reader(row + 1, tmp2);
-			}
-			antialias_(length, tmp0, tmp1, tmp2, writer);
-			antialias_(length, tmp2, tmp1, tmp0, writer);
+			filter3(length, buf0, buf1, buf2, rw);
+			filter3(length, buf2, buf1, buf0, rw);
+		}
+	}
+};
+
+class AntialiasGray8 : public BasicAntialias {
+private:
+	class RW_H : public AntialiasRW {
+	public:
+		AntialiasGray8 *a;
+		void reader(int line, uint8_t *out)
+		{
+			memcpy(out + 1, a->scanlines[line], a->width);
+			out[0] = out[1];
+			out[a->width + 1] = out[a->width];
+		}
+		void writer(int pos, uint8_t v)
+		{
+			a->scanlines[a->row][pos] = v;
+		}
+		RW_H(AntialiasGray8 *a)
+			: a(a)
+		{
 		}
 	};
+	class RW_V : public AntialiasRW {
+	public:
+		AntialiasGray8 *a;
+		void reader(int line, uint8_t *out)
+		{
+			for (int y = 0; y < a->height; y++) {
+				out[y + 1] = a->scanlines[y][line];
+			}
+			out[0] = out[1];
+			out[a->height + 1] = out[a->height];
+		}
+		void writer(int pos, uint8_t v)
+		{
+			a->scanlines[pos][a->row] = v;
+		}
+		RW_V(AntialiasGray8 *a)
+			: a(a)
+		{
+		}
+	};
+public:
+	void filter(QImage *image)
+	{
+		width = image->width();
+		height = image->height();
 
-	byte_offset = 0; // red
-	Do(w, h, ReaderH, WriterH);
-	Do(h, w, ReaderV, WriterV);
-	byte_offset++; // green
-	Do(w, h, ReaderH, WriterH);
-	Do(h, w, ReaderV, WriterV);
-	byte_offset++; // blue
-	Do(w, h, ReaderH, WriterH);
-	Do(h, w, ReaderV, WriterV);
-}
+		int span = width > height ? width : height;
+		tmp0 = (uint8_t *)alloca(span + 2);
+		tmp1 = (uint8_t *)alloca(span + 2);
+		tmp2 = (uint8_t *)alloca(span + 2);
+
+		scanlines = (uint8_t **)alloca(sizeof(uint8_t *) * height);
+		for (int y = 0; y < height; y++) {
+			scanlines[y] = (uint8_t *)image->scanLine(y);
+		}
+
+		RW_H rwh(this);
+		RW_V rwv(this);
+
+		filter2(width, height, &rwh);
+		filter2(height, width, &rwv);
+	}
+};
+
+class AntialiasRGB888 : public BasicAntialias {
+public:
+	int plane;
+	class RW_H : public AntialiasRW {
+	public:
+		AntialiasRGB888 *a;
+		void reader(int line, uint8_t *out)
+		{
+			uint8_t const *src = a->scanlines[line];
+			for (int i = 0; i < a->width; i++) {
+				out[i + 1] = src[i * 3 + a->plane];
+			}
+			out[0] = out[1];
+			out[a->width + 1] = out[a->width];
+		}
+		void writer(int pos, uint8_t v)
+		{
+			uint8_t *ptr = a->scanlines[a->row] + pos * 3;
+			ptr[a->plane] = v;
+		}
+		RW_H(AntialiasRGB888 *a)
+			: a(a)
+		{
+		}
+	};
+	class RW_V : public AntialiasRW {
+	public:
+		AntialiasRGB888 *a;
+		void reader(int line, uint8_t *out)
+		{
+			for (int y = 0; y < a->height; y++) {
+				uint8_t const *src = a->scanlines[y] + line * 3;
+				out[y + 1] = src[a->plane];
+			}
+			out[0] = out[1];
+			out[a->height + 1] = out[a->height];
+		}
+		void writer(int pos, uint8_t v)
+		{
+			uint8_t *ptr = a->scanlines[pos] + a->row * 3;
+			ptr[a->plane] = v;
+		}
+		RW_V(AntialiasRGB888 *a)
+			: a(a)
+		{
+		}
+	};
+public:
+	void filter(QImage *image)
+	{
+		width = image->width();
+		height = image->height();
+
+		int span = width > height ? width : height;
+		tmp0 = (uint8_t *)alloca(span + 2);
+		tmp1 = (uint8_t *)alloca(span + 2);
+		tmp2 = (uint8_t *)alloca(span + 2);
+
+		scanlines = (uint8_t **)alloca(sizeof(uint8_t *) * height);
+		for (int y = 0; y < height; y++) {
+			scanlines[y] = (uint8_t *)image->scanLine(y);
+		}
+
+		RW_H rwh(this);
+		RW_V rwv(this);
+
+		plane = 0; // red
+		filter2(width, height, &rwh);
+		filter2(height, width, &rwv);
+		plane++; // green
+		filter2(width, height, &rwh);
+		filter2(height, width, &rwv);
+		plane++; // blue
+		filter2(width, height, &rwh);
+		filter2(height, width, &rwv);
+	}
+};
+
+} // namespace
 
 bool antialias(QImage *image)
 {
@@ -200,12 +262,12 @@ bool antialias(QImage *image)
 	}
 
 	if (image->format() == QImage::Format_Grayscale8) {
-		antialias_gray8(image);
+		AntialiasGray8().filter(image);
 		return true;
 	}
 
 	if (image->format() == QImage::Format_RGB888) {
-		antialias_rgb888(image);
+		AntialiasRGB888().filter(image);
 		return true;
 	}
 
