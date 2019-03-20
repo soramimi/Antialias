@@ -16,45 +16,45 @@ public:
 
 void filter3(int length, uint8_t *line0, uint8_t *line1, uint8_t *line2, AntialiasRW *rw)
 {
-	for (int pos = 0; pos < length; pos++) {
-		if (line1[pos + 1] != line1[pos + 2]) {
-			int a = (line1[pos + 1] + line1[pos + 2]) / 2;
+	for (int pos = 0; pos + 1 < length; pos++) {
+		if (line1[pos] != line1[pos + 1]) {
+			int a = (line1[pos] + line1[pos + 1]) / 2;
 			int n1 = 0;
 			int n2 = 0;
-			if (line1[pos + 1] < a) {
-				if (line0[pos + 2] < a || line2[pos + 2] < a) {
+			if (line1[pos] < a) {
+				if (line0[pos + 1] < a || line2[pos + 1] < a) {
 					for (int i = pos; i > 0; i--) {
-						if (line1[i + 1] > a) break;
-						if (line2[i + 1] < a) break;
+						if (line1[i] > a) break;
+						if (line2[i] < a) break;
 						n1++;
 					}
 				}
 				if (line0[pos] > a || line2[pos] > a) {
 					for (int i = pos + 1; i < length; i++) {
-						if (line1[i + 1] < a) break;
-						if (line0[i + 1] > a) break;
+						if (line1[i] < a) break;
+						if (line0[i] > a) break;
 						n2++;
 					}
 				}
-			} else {
-				if (line0[pos + 2] > a || line2[pos + 2] > a) {
+			} else if (line1[pos + 1] < a) {
+				if (line0[pos + 1] > a || line2[pos + 1] > a) {
 					for (int i = pos; i > 0; i--) {
-						if (line1[i + 1] < a) break;
-						if (line0[i + 1] > a) break;
+						if (line1[i] < a) break;
+						if (line0[i] > a) break;
 						n1++;
 					}
 				}
 				if (line0[pos] < a || line2[pos] < a) {
 					for (int i = pos + 1; i < length; i++) {
-						if (line1[i + 1] > a) break;
-						if (line2[i + 1] < a) break;
+						if (line1[i] > a) break;
+						if (line2[i] < a) break;
 						n2++;
 					}
 				}
 			}
 			n1 /= 2;
 			if (n1 > 0) {
-				int b = line1[pos + 1 - n1];
+				int b = line1[pos - n1];
 				for (int i = 0; i < n1; i++) {
 					rw->writer(pos - i, a + (b - a) * (i + 1) / (n1 + 1));
 				}
@@ -111,9 +111,7 @@ private:
 		AntialiasGray8 *a;
 		void reader(int line, uint8_t *out)
 		{
-			memcpy(out + 1, a->scanlines[line], a->width);
-			out[0] = out[1];
-			out[a->width + 1] = out[a->width];
+			memcpy(out, a->scanlines[line], a->width);
 		}
 		void writer(int pos, uint8_t v)
 		{
@@ -130,10 +128,8 @@ private:
 		void reader(int line, uint8_t *out)
 		{
 			for (int y = 0; y < a->height; y++) {
-				out[y + 1] = a->scanlines[y][line];
+				out[y] = a->scanlines[y][line];
 			}
-			out[0] = out[1];
-			out[a->height + 1] = out[a->height];
 		}
 		void writer(int pos, uint8_t v)
 		{
@@ -151,9 +147,9 @@ public:
 		height = image->height();
 
 		int span = width > height ? width : height;
-		tmp0 = (uint8_t *)alloca(span + 2);
-		tmp1 = (uint8_t *)alloca(span + 2);
-		tmp2 = (uint8_t *)alloca(span + 2);
+		tmp0 = (uint8_t *)alloca(span);
+		tmp1 = (uint8_t *)alloca(span);
+		tmp2 = (uint8_t *)alloca(span);
 
 		scanlines = (uint8_t **)alloca(sizeof(uint8_t *) * height);
 		for (int y = 0; y < height; y++) {
@@ -178,10 +174,8 @@ public:
 		{
 			uint8_t const *src = a->scanlines[line];
 			for (int i = 0; i < a->width; i++) {
-				out[i + 1] = src[i * 3 + a->plane];
+				out[i] = src[i * 3 + a->plane];
 			}
-			out[0] = out[1];
-			out[a->width + 1] = out[a->width];
 		}
 		void writer(int pos, uint8_t v)
 		{
@@ -200,10 +194,8 @@ public:
 		{
 			for (int y = 0; y < a->height; y++) {
 				uint8_t const *src = a->scanlines[y] + line * 3;
-				out[y + 1] = src[a->plane];
+				out[y] = src[a->plane];
 			}
-			out[0] = out[1];
-			out[a->height + 1] = out[a->height];
 		}
 		void writer(int pos, uint8_t v)
 		{
@@ -222,9 +214,9 @@ public:
 		height = image->height();
 
 		int span = width > height ? width : height;
-		tmp0 = (uint8_t *)alloca(span + 2);
-		tmp1 = (uint8_t *)alloca(span + 2);
-		tmp2 = (uint8_t *)alloca(span + 2);
+		tmp0 = (uint8_t *)alloca(span);
+		tmp1 = (uint8_t *)alloca(span);
+		tmp2 = (uint8_t *)alloca(span);
 
 		scanlines = (uint8_t **)alloca(sizeof(uint8_t *) * height);
 		for (int y = 0; y < height; y++) {
@@ -266,7 +258,8 @@ bool antialias(QImage *image)
 		return true;
 	}
 
-	if (image->format() == QImage::Format_RGB888) {
+	*image = image->convertToFormat(QImage::Format_RGB888);
+	if (!image->isNull()) {
 		AntialiasRGB888().filter(image);
 		return true;
 	}
